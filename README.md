@@ -26,7 +26,13 @@ The grammatical context is modeled using a Left-to-Right sequence model built in
 * **Memory Layer (`nn.LSTM`):** A 128-unit Long Short-Term Memory network processes the 5 preceding context words. It maintains a hidden state that builds a grammatical understanding of the sentence up to the point of the typo.
 * **Classification Layer (`nn.Linear`):** The final hidden state of the LSTM is sliced (`lstm_out[:, -1, :]`) and passed through a linear layer to output unnormalized mathematical confidence scores (logits) across the entire 3,000-word vocabulary.
 
-### 4. Hybrid Inference Engine (The Two-Round Resolution)
+### 4. Training Pipeline & Parameter Optimization
+The neural network does not just read the book sequentially; it relies on a highly randomized, intensive training loop to build its grammatical intuition:
+* **15,000-Instance Dataset:** The system dynamically extracts 15,000 unique sequences from the text. Each instance consists of 5 grammatically correct preceding words paired with a mutated 6th target word and its true answer. This forces the model to encounter a massive variety of sentence structures.
+* **400 Training Epochs:** The LSTM processes this entire 15,000-instance dataset 400 separate times. Through Cross-Entropy Loss and the Adam Optimizer, the model recursively updates its internal neural weights, steadily decreasing its error rate until it fully maps the underlying grammar of the text.
+* **The Edit Distance Symbiosis:** A key architectural decision was separating *spelling* from *grammar*. The neural network spends 400 epochs mastering pure contextual probability, completely ignoring character-level spelling. The character-level heavy lifting is outsourced entirely to the Damerau-Levenshtein edit distance during the inference phase. This separation of concerns creates a highly efficient system where each algorithm focuses on what it does best.
+
+### 5. Hybrid Inference Engine (The Two-Round Resolution)
 When predicting a correction during testing, the model executes its signature hybrid logic inside the `final()` function. This guarantees that the output is both visually accurate to the original typo and grammatically logical within the sentence context:
 
 * **Round 1 - The Typo Brain (Damerau-Levenshtein Candidate Generation):** When an out-of-vocabulary word (typo) is detected, the engine bypasses traditional heuristic guessing and performs a brute-force exhaustive search across the entire 3,000-word vocabulary matrix. 
