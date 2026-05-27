@@ -27,9 +27,17 @@ The grammatical context is modeled using a Left-to-Right sequence model built in
 * **Classification Layer (`nn.Linear`):** The final hidden state of the LSTM is sliced (`lstm_out[:, -1, :]`) and passed through a linear layer to output unnormalized mathematical confidence scores (logits) across the entire 3,000-word vocabulary.
 
 ### 4. Hybrid Inference Engine (The Two-Round Resolution)
-When predicting a correction during testing, the model executes its signature hybrid logic:
-* **Round 1 - The Typo Brain (Damerau-Levenshtein Search):** The misspelled word is compared against all 3,000 dictionary words using NLTK's edit distance algorithm (with transpositions enabled). The algorithm isolates a candidate list of the word(s) with the absolute lowest mathematical edit distance.
-* **Round 2 - The Grammar Brain (LSTM Tie-Breaker):** If Round 1 yields a single match, it is returned immediately. If it yields multiple valid candidates (a tie), the candidate list is passed to the custom-trained PyTorch LSTM. The LSTM evaluates the preceding 5-word context, extracts the raw output logits specifically for the tied candidates, and selects the word with the highest grammatical probability.
+When predicting a correction during testing, the model executes its signature hybrid logic inside the `final()` function. This guarantees that the output is both visually accurate to the original typo and grammatically logical within the sentence context:
+
+* **Round 1 - The Typo Brain (Damerau-Levenshtein Candidate Generation):** When an out-of-vocabulary word (typo) is detected, the engine bypasses traditional heuristic guessing and performs a brute-force exhaustive search across the entire 3,000-word vocabulary matrix. 
+    * It calculates the Damerau-Levenshtein distance for every single word. (By enabling `transpositions=True`, the algorithm intelligently understands that adjacent swapped letters—like "hte" instead of "the"—count as a single human error rather than two distinct edits).
+    * The engine dynamically filters this matrix, tracking the absolute `min_distance`. Any word that perfectly matches this minimum distance is appended to a highly restricted `candidate_words` array.
+
+* **Round 2 - The Grammar Brain (Logit Extraction & Tie-Breaking):** If Round 1 yields a single match, it is returned immediately. However, if the `candidate_words` array contains a tie (e.g., "to" and "at" are both exactly 1 edit away from the typo "ta"), the engine triggers the neural network.
+    * To conserve memory, the model is placed in `.eval()` mode with `torch.no_grad()` active.
+    * The LSTM performs a forward pass on the preceding 5-word sequence (the `input_x` context window).
+    * The model outputs a tensor containing 3,000 raw mathematical confidence scores (logits). The engine ignores the rest of the dictionary and extracts the specific logits *only* for the tied candidate words.
+    * By iterating through the candidates and comparing these localized logits, the AI selects the word with the highest maximum grammatical probability (`best_score`). This allows the neural network to effectively act as the ultimate contextual tie-breaker for the deterministic string-matching algorithm.
 
 ## How to Run
 
